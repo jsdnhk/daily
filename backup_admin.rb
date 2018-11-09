@@ -42,7 +42,16 @@ module BackupAdmin
   end
 end
 
-class << $stdout
+module FileUtils
+  def cp_f(src, dest, preserve: nil, noop: nil, verbose: nil,
+           dereference_root: true, remove_destination: nil)
+    fu_output_message "cp -f#{preserve ? 'p' : ''}#{remove_destination ? ' --remove-destination' : ''} #{[src,dest].flatten.join ' '}" if verbose
+    return if noop
+    fu_each_src_dest(src, dest) do |s, d|
+      copy_entry s, d, preserve, dereference_root, remove_destination
+    end
+  end
+  module_function :cp_f
 end
 
 class CPBKP
@@ -56,7 +65,7 @@ class CPBKP
       exit(false)
     end
 
-    puts("copy the files from the folder [#{$copy_src_folder}] to the directory [#{$copy_dest_path}]...")
+    puts("copying the files from the folder [#{$copy_src_folder}] to the directory [#{$copy_dest_path}]...")
 
     if backup_plus_copy_files?()
       puts("all files related are backup and copied successfully!!")
@@ -122,14 +131,10 @@ class CPBKP
       end
       #backup before copying
       st_file = nil
-      default_uid = nil
-      default_gid = nil
-      default_mode = nil
+      default_uid, default_gid, default_mode = nil, nil, nil
       if File.file?(dest_file_absolute_path)
         st_file = File.stat(dest_file_absolute_path)
-        default_uid = st_file.uid
-        default_gid = st_file.gid
-        default_mode = st_file.mode
+        default_uid, default_gid, default_mode = st_file.uid, st_file.gid, st_file.mode
         while filepath_backuped.nil?
           dest_backup_path = dest_backup_absolute_path + ( backup_num > 0 ? ".#{backup_num.to_s}" : "" )
           backup_num = backup_num + 1
@@ -174,19 +179,73 @@ end
 
 class CLR
   include BackupAdmin
+
+  def initialize(backup_date)
+    backup_date = backup_date.to_s.strip
+    @date_backup_date = get_date_time(backup_date)
+    @str_backup_date = backup_date
+  end
+
+  public
+  def clr()
+    $stdout.puts("clearing the backup files from the folder [#{$target_folder_path}] on one date [#{$backup_date}]...")
+    if clear_backup_files?()
+      $stdout.puts("all files related are cleared successfully!!")
+      exit(true)
+    else
+      $stderr.puts("the clr processes are failed with errors?! Please verify and try again.")
+      exit(false)
+    end
+  end
+
+  private
+  def clear_backup_files?()
+    bool_return = true
+    begin
+      raise("no correct datetime input") unless @date_backup_date
+
+      str_date_findfile = nil
+      find_result = %x(find #{$target_folder_path} -type f).split("\n")
+      find_result.each do |item|
+        findfile_filename = File.basename(item)
+        findfile_section_length = findfile_filename.split('.').length
+        each_count = 0
+        str_date_findfile = findfile_filename.split('.').reverse.inject(nil) do |memo, obj; var|
+          var = /^#{@str_backup_date}$/.match(obj)
+          each_count += 1
+          if var && !memo && each_count != findfile_section_length
+            break var.to_s
+          else
+            next memo
+          end
+        end
+
+        t_date_findfile = get_date_time(str_date_findfile, DateFormat)
+        next unless t_date_findfile
+        FileUtils.rm_f([item])
+        $stdout.puts("the backup file [#{item}] is removed successfully") if $is_verbose
+      end
+    rescue
+      $stderr.puts "An error occurred when copying backup files to [#{@str_backup_date}]: #{$!}"
+      bool_return = false
+    ensure
+    end
+    return bool_return
+  end
 end
 
 class HK
   include BackupAdmin
 
   def initialize(backup_date)
+    backup_date = backup_date.to_s.strip
     @date_backup_date = get_date_time(backup_date)
     @str_backup_date = backup_date
   end
 
   public
   def hk()
-    $stdout.puts("clear the files from the folder [#{$copy_src_folder}] to date [#{$backup_date}]...")
+    $stdout.puts("clearing the backup files from the folder [#{$target_folder_path}] to date [#{$backup_date}]...")
     if clear_backup_files?()
       $stdout.puts("all files related are cleared successfully!!")
       exit(true)
@@ -202,14 +261,16 @@ class HK
     begin
       raise("no correct datetime input") unless @date_backup_date
 
-      find_result_src = %x(find #{$copy_dest_path} -type f).split("\n")
-      find_result_dest = %x(find #{$copy_dest_path} -type f).split("\n")
-      find_result = find_result_src + find_result_dest
+      str_date_findfile = nil
+      find_result = %x(find #{$target_folder_path} -type f).split("\n")
       find_result.each do |item|
         findfile_filename = File.basename(item)
+        findfile_section_length = findfile_filename.split('.').length
+        each_count = 0
         str_date_findfile = findfile_filename.split('.').reverse.inject(nil) do |memo, obj; var|
-          var = /^[0-9]{8}/.match(obj)
-          if var && !memo
+          var = /^[0-9]{8}$/.match(obj)
+          each_count += 1
+          if var && !memo && each_count != findfile_section_length
             break var.to_s
           else
             next memo
@@ -230,33 +291,115 @@ class HK
   end
 end
 
+class RC
+  include BackupAdmin
+
+  def initialize(backup_date)
+    backup_date = backup_date.to_s.strip
+    @date_backup_date = get_date_time(backup_date)
+    @str_backup_date = backup_date
+  end
+
+  public
+  def rc()
+    $stdout.puts("recovering the backup files from the folder [#{$target_folder_path}] from date [#{$backup_date}]...")
+    if recover_backup_files?()
+      $stdout.puts("all files related are recovered successfully!!")
+      exit(true)
+    else
+      $stderr.puts("the rc processes are failed with errors?! Please verify and try again.")
+      exit(false)
+    end
+  end
+
+  private
+  def recover_backup_files?()
+    bool_return = true
+    begin
+      raise("no correct datetime input") unless @date_backup_date
+
+      str_date_findfile = nil
+      find_result = %x(find #{$target_folder_path} -type f).split("\n")
+      find_result.each do |item|
+        findfile_filename = File.basename(item)
+        findfile_dirname = File.dirname(item)
+        findfile_section = findfile_filename.split('.')
+        findfile_section_length = findfile_section.length
+        each_count = 0
+        str_date_findfile = findfile_section.reverse.inject(nil) do |memo, obj; var|
+          var = /^#{@str_backup_date}$/.match(obj)
+          each_count += 1
+          if var && !memo && each_count != findfile_section_length
+            break var.to_s
+          else
+            next memo
+          end
+        end
+        next unless str_date_findfile
+        backup_src = File.expand_path(findfile_filename, findfile_dirname)
+        recover_dest = File.expand_path(findfile_section[0, findfile_section_length - each_count].join('.'), findfile_dirname)
+        st_file = File.exist?(recover_dest) && File.stat(recover_dest)
+        FileUtils.cp_f(backup_src, recover_dest, preserve: true)
+        if st_file && File.exist?(recover_dest)
+          File.chown(st_file.uid, st_file.gid, recover_dest)
+          File.chmod(st_file.mode, recover_dest)
+        end
+        $stdout.puts("the original file[#{recover_dest}] is recovered from the backup file [#{findfile_filename}] successfully") if $is_verbose
+      end
+    rescue
+      $stderr.puts "An error occurred when recovering the files from [#{@str_backup_date}]: #{$!}"
+      bool_return = false
+    ensure
+    end
+    return bool_return
+  end
+end
+
 $t_current=Time.now
 $str_t_current=$t_current.strftime(BackupAdmin::DateFormat)
 $is_verbose=true
-$action=ARGV[0].to_s.strip.downcase
-$copy_src_folder=ARGV[1].to_s.strip
-$copy_dest_path=ARGV[2].to_s.strip
-$backup_date=ARGV[3].to_s.strip
-$action.freeze
-$copy_src_folder.freeze
-$copy_dest_path.freeze
-$backup_date.freeze
 
-if ARGV.length < 3
-  $stderr.puts("the script requires at least three input parm.")
-  $stderr.puts("./backup_admin.rb {{ action }} {{ copy_src_folder }} {{ copy_dest_path }} {{ backup_date }}")
+notice_msg = \
+"
+The command should be input with the format shown below:
+1)Copy and Backup:
+backup_admin.rb cpbkp {{ copy_src_folder }} {{ copy_dest_path }}
+2)Clear the backups on the date:
+backup_admin.rb clr {{ target_folder_path }} {{ target date (yyyyMMdd) }}
+3)Clear the backups until the date (housekeeping):
+backup_admin.rb hk {{ target_folder_path }} {{ until date (yyyyMMdd) }}
+3)Recover from the backup date:
+backup_admin.rb rc {{ target_folder_path }} {{ backup date (yyyyMMdd) }}
+"
+
+if ARGV.length != 3
+  $stderr.puts("The script requires at least three input parm.")
+  $stderr.puts(notice_msg)
   exit(false)
 end
 
+$action=ARGV[0].to_s.strip.downcase; $action.freeze
 case $action
   when 'cpbkp'
+    $copy_src_folder=ARGV[1].to_s.strip; $copy_src_folder.freeze
+    $copy_dest_path=ARGV[2].to_s.strip; $copy_dest_path.freeze
     CPBKP.new.cpbkp()
   when 'clr'
+    $target_folder_path=ARGV[1].to_s.strip; $target_folder_path.freeze
+    $backup_date=ARGV[2].to_s.strip; $backup_date.freeze
     CLR.new($backup_date).clr()
   when 'hk'
+    $target_folder_path=ARGV[1].to_s.strip; $target_folder_path.freeze
+    $backup_date=ARGV[2].to_s.strip; $backup_date.freeze
     HK.new($backup_date).hk()
   when 'rc'
+    $target_folder_path=ARGV[1].to_s.strip; $target_folder_path.freeze
+    $backup_date=ARGV[2].to_s.strip; $backup_date.freeze
+    RC.new($backup_date).rc()
   else
     $stderr.puts("unavailable action type [#{$action}]! please input the arguments values again.")
+    $stderr.puts(notice_msg)
     exit(false)
 end
+
+
