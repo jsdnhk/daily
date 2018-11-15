@@ -1,5 +1,5 @@
 #!/usr/bin/ruby
-#encoding: utf-8
+##encoding: utf-8
 #version: ruby 2.3.1
 #
 #Perform backup task functions on Linux OS:
@@ -379,6 +379,10 @@ if ARGV.length != 3
 end
 
 $action=ARGV[0].to_s.strip.downcase; $action.freeze
+$copy_src_folder = ''
+$copy_dest_path = ''
+$target_folder_path = ''
+$backup_date = ''
 case $action
   when 'cpbkp'
     $copy_src_folder=ARGV[1].to_s.strip; $copy_src_folder.freeze
