@@ -1,0 +1,21 @@
+#.ssh config template
+
+#env
+
+	Host env-gateway
+	User user
+	Hostname {{ ip/hostname }}
+	HostKeyAlias env-gateway
+
+	Host env-host1
+        User user
+        Hostname {{ ip/hostname }}
+        ProxyCommand ssh -W %h:%p env-gateway
+        HostKeyAlias env-host1
+
+	Host env-host2
+        User user
+        Hostname {{ ip/hostname }}
+        ProxyCommand ssh -W %h:%p env-gateway
+        RemoteForward {{ port }} {{ ip/hostname:port }}
+        HostKeyAlias env-host2        
