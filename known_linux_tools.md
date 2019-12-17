@@ -19,3 +19,4 @@
   that delivers fast, reliable and secure access to blocked websites and 
   apps.
 - **youtube-dl** - Command-line program to download videos from YouTube.com and other video sites
+- **font-manager** - Simple font management for GTK+ desktop environments
