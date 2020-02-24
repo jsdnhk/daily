@@ -1,4 +1,4 @@
-# Top 15 Common Linux Commands
+# Top 150 Common Linux Commands
 
 Linux企業運維人員最常用150個命令彙總，
 由[貼文](http://blog.51cto.com/oldboy/1951107)轉載。
